@@ -106,6 +106,12 @@ test_expect_success 'alias loop' '
 	test_must_fail git log --pretty=test-foo
 '
 
+test_expect_success 'pipe next placeholder' '
+	printf "dd bar\n$(commit_msg | $TEST_DIRECTORY/filter-first-char.sh)" >expected &&
+	git log --pretty="format:%|($TEST_DIRECTORY/filter-first-char.sh)%s" >actual &&
+	test_cmp expected actual
+'
+
 test_expect_success 'NUL separation' '
 	printf "add bar\0$(commit_msg)" >expected &&
 	git log -z --pretty="format:%s" >actual &&

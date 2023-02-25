@@ -143,6 +143,7 @@ The placeholders are:
 	    `auto` alone (i.e. `%C(auto)`) will turn on auto coloring
 	    on the next placeholders until the color is switched
 	    again.
+'%|(<command>)':: pipe the next placeholder through command
 '%m':: left (`<`), right (`>`) or boundary (`-`) mark
 '%w([<w>[,<i1>[,<i2>]]])':: switch line wrapping, like the -w option of
 			    linkgit:git-shortlog[1].

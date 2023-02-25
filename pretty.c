@@ -880,6 +880,10 @@ struct pad_entry_context {
 	enum trunc_type truncate;
 };
 
+struct pipe_entry_context {
+    struct strbuf command;
+};
+
 struct format_commit_context {
 	void* next_entry_context;
 	format_next_entry_cb next_entry_cb;
@@ -910,6 +914,10 @@ static void pad_commit(struct strbuf* sb, char const* output,
 				    size_t output_size,
 				    struct format_commit_context* fmt_context,
 				    void *context);
+
+static void* create_next_entry_context(format_next_entry_cb cb,
+				struct format_commit_context* c,
+				size_t size);
 
 static void parse_commit_header(struct format_commit_context *context)
 {
@@ -1040,6 +1048,53 @@ static void rewrap_message_tail(struct strbuf *sb,
 	c->width = new_width;
 	c->indent1 = new_indent1;
 	c->indent2 = new_indent2;
+}
+
+static void pipe_commit(struct strbuf* sb, char const* output,
+				    size_t output_size,
+				    struct format_commit_context* fmt_context,
+				    void *context)
+{
+	struct pipe_entry_context* c = context;
+
+	struct child_process cp = CHILD_PROCESS_INIT;
+	strvec_pushl(&cp.args, c->command.buf, NULL);
+	pipe_command(&cp, output, output_size, sb, 0, NULL, 0);
+
+	strbuf_release(&c->command);
+}
+
+static size_t parse_pipe_entry(struct strbuf *sb, /* in UTF-8 */
+			  const char *placeholder,
+			  struct format_commit_context* c)
+{
+	const char *begin;
+	const char *end;
+	struct pipe_entry_context* pc;
+
+	/*
+	 * At this point we expect something like this:
+	 * %|(cat)
+	 *  ^
+	 *  |
+	 * placeholder is pointer here currently
+	 */
+	if (placeholder[1] != '(')
+		die(_("%%| in pretty expects %%|([some-command]"));
+
+	begin = placeholder + 2;
+	end = strchr(begin, ')');
+
+	if (!end)
+		die(_("%%| in pretty expects %%|([some-command]"));
+
+	pc = create_next_entry_context(
+			pipe_commit, c, sizeof(struct pipe_entry_context));
+	strbuf_init(&pc->command, 0);
+
+	strbuf_add(&pc->command, begin, end-begin);
+
+	return end-placeholder+1;
 }
 
 static int format_reflog_person(struct strbuf *sb,
@@ -1422,6 +1477,8 @@ static size_t format_commit_one(struct strbuf *sb, /* in UTF-8 */
 		return res;
 
 	switch (placeholder[0]) {
+	case '|':
+		return parse_pipe_entry(sb, placeholder, c);
 	case 'C':
 		if (starts_with(placeholder + 1, "(auto)")) {
 			c->auto_color = want_color(c->pretty_ctx->color);
