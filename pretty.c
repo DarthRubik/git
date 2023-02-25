@@ -867,7 +867,14 @@ enum trunc_type {
 	trunc_right
 };
 
+struct format_commit_context;
+
+typedef void (*format_next_entry_cb)(struct strbuf* sb, char const* output,
+				    size_t output_size,
+				    struct format_commit_context *c);
+
 struct format_commit_context {
+	format_next_entry_cb next_entry_cb;
 	struct repository *repository;
 	const struct commit *commit;
 	const struct pretty_print_context *pretty_ctx;
@@ -892,6 +899,11 @@ struct format_commit_context {
 	/* The following ones are relative to the result struct strbuf. */
 	size_t wrap_start;
 };
+
+
+static void pad_commit(struct strbuf* sb, char const* output,
+				    size_t output_size,
+				    struct format_commit_context *c);
 
 static void parse_commit_header(struct format_commit_context *context)
 {
@@ -1099,6 +1111,10 @@ static size_t parse_padding_placeholder(const char *placeholder,
 	const char *ch = placeholder;
 	enum flush_type flush_type;
 	int to_column = 0;
+	c->next_entry_cb = pad_commit;
+	c->padding = 0;
+	c->flush_type = no_flush;
+	c->truncate = trunc_none;
 
 	switch (*ch++) {
 	case '<':
@@ -1779,12 +1795,11 @@ static void pad_commit(struct strbuf* sb, char const* output,
 		memcpy(sb->buf + sb_len + offset, local_sb.buf,
 		       local_sb.len);
 	}
-	c->flush_type = no_flush;
 
 	strbuf_release(&local_sb);
 }
 
-static size_t format_and_pad_commit(struct strbuf *sb, /* in UTF-8 */
+static size_t format_and_handle_queued_operation(struct strbuf *sb, /* in UTF-8 */
 				    const char *placeholder,
 				    struct format_commit_context *c)
 {
@@ -1804,7 +1819,8 @@ static size_t format_and_pad_commit(struct strbuf *sb, /* in UTF-8 */
 		placeholder++;
 		total_consumed++;
 	}
-	pad_commit(sb, local_sb.buf, local_sb.len, c);
+	c->next_entry_cb(sb, local_sb.buf, local_sb.len, c);
+	c->next_entry_cb = NULL;
 
 	strbuf_release(&local_sb);
 	return total_consumed;
@@ -1851,8 +1867,8 @@ static size_t format_commit_item(struct strbuf *sb, /* in UTF-8 */
 	}
 
 	orig_len = sb->len;
-	if (((struct format_commit_context *)context)->flush_type != no_flush)
-		consumed = format_and_pad_commit(sb, placeholder, context);
+	if (((struct format_commit_context *)context)->next_entry_cb)
+		consumed = format_and_handle_queued_operation(sb, placeholder, context);
 	else
 		consumed = format_commit_one(sb, placeholder, context);
 	if (magic == NO_MAGIC)
