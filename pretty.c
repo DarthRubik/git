@@ -1693,13 +1693,14 @@ static size_t format_commit_one(struct strbuf *sb, /* in UTF-8 */
 	return 0;	/* unknown placeholder */
 }
 
-static size_t format_and_pad_commit(struct strbuf *sb, /* in UTF-8 */
-				    const char *placeholder,
+static void pad_commit(struct strbuf* sb, char const* output,
+				    size_t output_size,
 				    struct format_commit_context *c)
 {
 	struct strbuf local_sb = STRBUF_INIT;
-	size_t total_consumed = 0;
 	int len, padding = c->padding;
+
+	strbuf_add(&local_sb, output, output_size);
 
 	if (padding < 0) {
 		const char *start = strrchr(sb->buf, '\n');
@@ -1709,20 +1710,6 @@ static size_t format_and_pad_commit(struct strbuf *sb, /* in UTF-8 */
 		occupied = utf8_strnwidth(start, strlen(start), 1);
 		occupied += c->pretty_ctx->graph_width;
 		padding = (-padding) - occupied;
-	}
-	while (1) {
-		int modifier = *placeholder == 'C';
-		size_t consumed = format_commit_one(&local_sb, placeholder, c);
-		total_consumed += consumed;
-
-		if (!modifier)
-			break;
-
-		placeholder += consumed;
-		if (*placeholder != '%')
-			break;
-		placeholder++;
-		total_consumed++;
 	}
 	len = utf8_strnwidth(local_sb.buf, local_sb.len, 1);
 
@@ -1792,8 +1779,34 @@ static size_t format_and_pad_commit(struct strbuf *sb, /* in UTF-8 */
 		memcpy(sb->buf + sb_len + offset, local_sb.buf,
 		       local_sb.len);
 	}
-	strbuf_release(&local_sb);
 	c->flush_type = no_flush;
+
+	strbuf_release(&local_sb);
+}
+
+static size_t format_and_pad_commit(struct strbuf *sb, /* in UTF-8 */
+				    const char *placeholder,
+				    struct format_commit_context *c)
+{
+	struct strbuf local_sb = STRBUF_INIT;
+	int total_consumed = 0;
+	while (1) {
+		int modifier = *placeholder == 'C';
+		size_t consumed = format_commit_one(&local_sb, placeholder, c);
+		total_consumed += consumed;
+
+		if (!modifier)
+			break;
+
+		placeholder += consumed;
+		if (*placeholder != '%')
+			break;
+		placeholder++;
+		total_consumed++;
+	}
+	pad_commit(sb, local_sb.buf, local_sb.len, c);
+
+	strbuf_release(&local_sb);
 	return total_consumed;
 }
 
