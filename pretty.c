@@ -871,9 +871,17 @@ struct format_commit_context;
 
 typedef void (*format_next_entry_cb)(struct strbuf* sb, char const* output,
 				    size_t output_size,
-				    struct format_commit_context *c);
+				    struct format_commit_context* fmt_context,
+				    void *context);
+
+struct pad_entry_context {
+	int padding;
+	enum flush_type flush_type;
+	enum trunc_type truncate;
+};
 
 struct format_commit_context {
+	void* next_entry_context;
 	format_next_entry_cb next_entry_cb;
 	struct repository *repository;
 	const struct commit *commit;
@@ -881,13 +889,10 @@ struct format_commit_context {
 	unsigned commit_header_parsed:1;
 	unsigned commit_message_parsed:1;
 	struct signature_check signature_check;
-	enum flush_type flush_type;
-	enum trunc_type truncate;
 	const char *message;
 	char *commit_encoding;
 	size_t width, indent1, indent2;
 	int auto_color;
-	int padding;
 
 	/* These offsets are relative to the start of the commit message. */
 	struct chunk author;
@@ -903,7 +908,8 @@ struct format_commit_context {
 
 static void pad_commit(struct strbuf* sb, char const* output,
 				    size_t output_size,
-				    struct format_commit_context *c);
+				    struct format_commit_context* fmt_context,
+				    void *context);
 
 static void parse_commit_header(struct format_commit_context *context)
 {
@@ -1105,16 +1111,30 @@ static size_t parse_color(struct strbuf *sb, /* in UTF-8 */
 	return rest - placeholder;
 }
 
+/*
+ * Registers a callback that will filter the next placeholder.....also
+ * allocates some memory based to pass in a custom context
+ */
+static void* create_next_entry_context(format_next_entry_cb cb,
+				struct format_commit_context* c,
+				size_t size)
+{
+	c->next_entry_cb = cb;
+	c->next_entry_context = calloc(size, 1);
+
+	return c->next_entry_context;
+}
+
 static size_t parse_padding_placeholder(const char *placeholder,
-					struct format_commit_context *c)
+					struct format_commit_context *context)
 {
 	const char *ch = placeholder;
 	enum flush_type flush_type;
 	int to_column = 0;
-	c->next_entry_cb = pad_commit;
-	c->padding = 0;
-	c->flush_type = no_flush;
-	c->truncate = trunc_none;
+
+	struct pad_entry_context* c
+		= create_next_entry_context(pad_commit,
+				context, sizeof(struct pad_entry_context));
 
 	switch (*ch++) {
 	case '<':
@@ -1711,8 +1731,10 @@ static size_t format_commit_one(struct strbuf *sb, /* in UTF-8 */
 
 static void pad_commit(struct strbuf* sb, char const* output,
 				    size_t output_size,
-				    struct format_commit_context *c)
+				    struct format_commit_context* fmt_context,
+				    void *context)
 {
+	struct pad_entry_context* c = context;
 	struct strbuf local_sb = STRBUF_INIT;
 	int len, padding = c->padding;
 
@@ -1724,7 +1746,7 @@ static void pad_commit(struct strbuf* sb, char const* output,
 		if (!start)
 			start = sb->buf;
 		occupied = utf8_strnwidth(start, strlen(start), 1);
-		occupied += c->pretty_ctx->graph_width;
+		occupied += fmt_context->pretty_ctx->graph_width;
 		padding = (-padding) - occupied;
 	}
 	len = utf8_strnwidth(local_sb.buf, local_sb.len, 1);
@@ -1819,8 +1841,9 @@ static size_t format_and_handle_queued_operation(struct strbuf *sb, /* in UTF-8 
 		placeholder++;
 		total_consumed++;
 	}
-	c->next_entry_cb(sb, local_sb.buf, local_sb.len, c);
+	c->next_entry_cb(sb, local_sb.buf, local_sb.len, c, c->next_entry_context);
 	c->next_entry_cb = NULL;
+	free(c->next_entry_context);
 
 	strbuf_release(&local_sb);
 	return total_consumed;
