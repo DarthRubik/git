@@ -1058,7 +1058,24 @@ static void pipe_commit(struct strbuf* sb, char const* output,
 	struct pipe_entry_context* c = context;
 
 	struct child_process cp = CHILD_PROCESS_INIT;
-	strvec_pushl(&cp.args, c->command.buf, NULL);
+
+	struct strbuf** strs = strbuf_split(&c->command, ' ');
+
+	for (size_t i = 0; strs[i]; i++)
+	{
+		/*
+		 * Foreach strbuf....if it ends in ' ' (which it might based on how the
+		 * split function works) remove the final space
+		 */
+		if (strs[i]->buf[strs[i]->len-1] == ' ')
+		{
+			strs[i]->buf[strs[i]->len-1] = 0;
+		}
+		strvec_pushl(&cp.args, strs[i]->buf, NULL);
+	}
+
+	strbuf_list_free(strs);
+
 	pipe_command(&cp, output, output_size, sb, 0, NULL, 0);
 
 	strbuf_release(&c->command);

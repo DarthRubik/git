@@ -112,6 +112,18 @@ test_expect_success 'pipe next placeholder' '
 	test_cmp expected actual
 '
 
+test_expect_success 'pipe next placeholder + arg' '
+	printf " bar\n$(commit_msg | $TEST_DIRECTORY/filter-first-char.sh 4)" >expected &&
+	git log --pretty="format:%|($TEST_DIRECTORY/filter-first-char.sh 4)%s" >actual &&
+	test_cmp expected actual
+'
+
+test_expect_success 'pipe next placeholder + args' '
+	printf " ba\n$(commit_msg | $TEST_DIRECTORY/filter-first-char.sh 4 6)" >expected &&
+	git log --pretty="format:%|($TEST_DIRECTORY/filter-first-char.sh 4 6)%s" >actual &&
+	test_cmp expected actual
+'
+
 test_expect_success 'NUL separation' '
 	printf "add bar\0$(commit_msg)" >expected &&
 	git log -z --pretty="format:%s" >actual &&
